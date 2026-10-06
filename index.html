@@ -367,6 +367,72 @@
     }
   }
 
+  /* ---------- Puntuació: pauses i ordres dictades ---------- */
+  const PAUSE_COMMA = 600;     // ms de pausa que valen una coma
+  const PAUSE_STOP  = 1300;    // ms de pausa que valen un punt
+  const AUTO_STOP   = 2600;    // ms de silenci per acabar el dictat
+
+  // Paraules que, dites en veu alta, es converteixen en signes (les llargues primer)
+  const SPOKEN = {
+    ca: [['punt i coma',';'],['dos punts',':'],['signe d\'interrogació','?'],['interrogació','?'],['interrogant','?'],
+         ['signe d\'exclamació','!'],['exclamació','!'],['punt i a part','.'],['punt final','.'],['punt','.'],['coma',',']],
+    es: [['punto y coma',';'],['dos puntos',':'],['signo de interrogación','?'],['interrogación','?'],
+         ['signo de exclamación','!'],['exclamación','!'],['punto y aparte','.'],['punto final','.'],['punto','.'],['coma',',']],
+    en: [['semicolon',';'],['colon',':'],['question mark','?'],['exclamation mark','!'],['exclamation point','!'],
+         ['full stop','.'],['period','.'],['comma',',']],
+    fr: [['point-virgule',';'],['point virgule',';'],['deux points',':'],['deux-points',':'],['point d\'interrogation','?'],
+         ['point d\'exclamation','!'],['point final','.'],['point','.'],['virgule',',']],
+    pt: [['ponto e vírgula',';'],['dois pontos',':'],['ponto de interrogação','?'],['interrogação','?'],
+         ['ponto de exclamação','!'],['exclamação','!'],['ponto final','.'],['ponto','.'],['vírgula',',']],
+    it: [['punto e virgola',';'],['due punti',':'],['punto interrogativo','?'],['punto esclamativo','!'],
+         ['punto e a capo','.'],['punto','.'],['virgola',',']],
+    de: [['semikolon',';'],['doppelpunkt',':'],['fragezeichen','?'],['ausrufezeichen','!'],['punkt','.'],['komma',',']],
+    nl: [['puntkomma',';'],['dubbele punt',':'],['vraagteken','?'],['uitroepteken','!'],['punt','.'],['komma',',']],
+    ru: [['точка с запятой',';'],['двоеточие',':'],['вопросительный знак','?'],['восклицательный знак','!'],['точка','.'],['запятая',',']],
+    zh: [['分号','；'],['冒号','：'],['问号','？'],['感叹号','！'],['句号','。'],['逗号','，']]
+  };
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const isZh = L => L.tl.startsWith('zh');
+  const tokenize = (t, L) => isZh(L) ? Array.from(t.replace(/\s+/g, '')) : t.split(' ').filter(Boolean);
+
+  function punctuate(raw, pauses, L, final) {
+    const zh = isZh(L);
+    const tk = tokenize(raw, L);
+    if (!tk.length) return '';
+    // 1) Pauses detectades → coma o punt al final de la paraula anterior
+    pauses.forEach(p => {
+      if (p.at < 1 || p.at >= tk.length) return;
+      const w = tk[p.at - 1];
+      if (/[,.;:?!，。；：？！]$/.test(w)) return;
+      tk[p.at - 1] = w + (p.gap >= PAUSE_STOP ? (zh ? '。' : '.') : (zh ? '，' : ','));
+    });
+    let t = tk.join(zh ? '' : ' ');
+    // 2) Ordres dictades ("punt", "coma", "interrogació"…)
+    const list = SPOKEN[L.tl.split('-')[0]] || [];
+    list.forEach(([w, sym]) => {
+      const re = zh ? new RegExp(esc(w), 'g')
+                    : new RegExp('(^|\\s)' + esc(w).replace(/ /g, '\\s+') + '(?=$|[\\s,.;:?!])', 'giu');
+      t = t.replace(re, zh ? sym : sym);
+    });
+    // 3) Neteja: el signe dictat mana sobre el de la pausa, espais correctes
+    if (!zh) {
+      t = t.replace(/\s+([,.;:?!])/g, '$1')
+           .replace(/[,;:]+([.?!;:,])/g, '$1')
+           .replace(/\.([?!])/g, '$1')
+           .replace(/([,.;:])\1+/g, '$1')
+           .replace(/([,.;:?!])(?=[^\s\d,.;:?!])/g, '$1 ')
+           .replace(/^[\s,.;:]+/, '')
+           .replace(/\s{2,}/g, ' ').trim();
+      // Majúscula a l'inici i després de . ? !
+      t = t.replace(/(^|[.?!]\s+)(\p{Ll})/gu, (m, a, b) => a + b.toLocaleUpperCase(L.sr));
+      if (final && t && !/[.?!:;]$/.test(t)) t = t.replace(/,$/, '') + '.';
+    } else {
+      t = t.replace(/[，；：]+([。？！；：，])/g, '$1').replace(/^[，。；：]+/, '');
+      if (final && t && !/[。？！：；]$/.test(t)) t = t.replace(/，$/, '') + '。';
+    }
+    return t;
+  }
+
   /* ---------- Reconeixement de veu ---------- */
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let silenceTimer = null;
@@ -386,21 +452,22 @@
     stopRec();
 
     const L = lang[s], box = P[s].box, mic = P[s].mic, otherBox = P[other(s)].box;
-    let heard = '', done = false;
+    let heard = '', raw = '', done = false;
+    let pauses = [], lastChange = 0, lastCount = 0, lastRaw = '';
 
     const r = new SR();
     r.lang = L.sr; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
 
     const armSilence = () => {
       clearTimeout(silenceTimer);
-      silenceTimer = setTimeout(() => { try { r.stop(); } catch (e) {} }, 1600);
+      silenceTimer = setTimeout(() => { try { r.stop(); } catch (e) {} }, AUTO_STOP);
     };
     const finish = () => {
       if (done) return; done = true;
       clearTimeout(silenceTimer);
       mic.classList.remove('rec'); box.classList.remove('interim');
       if (rec === r) { rec = null; recSide = null; }
-      const text = heard.trim();
+      const text = punctuate(raw, pauses, L, true);
       if (text) { box.value = text; translateFrom(s, true); }
       else if (!statusEl.classList.contains('err')) setStatus('');
     };
@@ -415,10 +482,20 @@
     r.onresult = ev => {
       let all = '', interim = false;
       for (let i = 0; i < ev.results.length; i++) {
-        all += ev.results[i][0].transcript;
+        all += (isZh(L) ? '' : ' ') + ev.results[i][0].transcript;
         if (!ev.results[i].isFinal) interim = true;
       }
-      heard = all.replace(/\s+/g, ' ').trim();
+      raw = all.replace(/\s+/g, ' ').trim();
+      // Mesura de pauses: temps entre l'última paraula sentida i la següent
+      const now = performance.now();
+      const count = tokenize(raw, L).length;
+      if (count > lastCount && lastCount > 0 && now - lastChange >= PAUSE_COMMA) {
+        pauses.push({ at: lastCount, gap: now - lastChange });
+      }
+      if (raw !== lastRaw) { lastChange = now; lastRaw = raw; }
+      if (count > lastCount) lastCount = count;
+      pauses = pauses.filter(p => p.at < count);
+      heard = punctuate(raw, pauses, L, false);
       box.value = heard;
       box.classList.toggle('interim', interim);
       armSilence();
