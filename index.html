@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1220">
+<title>Traductor de veu</title>
+<style>
+  :root{
+    --bg:#0b1220; --bg2:#111b30; --card:#16213a; --card2:#1c2a4a;
+    --line:#2a3a60; --txt:#eef2ff; --mut:#93a0c0;
+    --a:#f5b301; --b:#38bdf8;
+    --ok:#34d399; --err:#f87171; --r:20px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 600px at 10% -10%,#1b2a52 0%,transparent 60%),
+               radial-gradient(900px 500px at 110% 10%,#10304a 0%,transparent 55%),var(--bg);
+    color:var(--txt);
+    padding:max(14px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));
+    min-height:100%;
+  }
+  .wrap{max-width:1100px;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+  h1{font-size:clamp(20px,4vw,28px);margin:0;letter-spacing:.2px}
+  .opts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .switch{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);
+    padding:8px 12px;border-radius:999px;font-size:14px;cursor:pointer;user-select:none}
+  .switch input{display:none}
+  .switch .dot{width:34px;height:20px;border-radius:999px;background:#33425f;position:relative;transition:.2s}
+  .switch .dot::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
+  .switch input:checked + .dot{background:var(--ok)}
+  .switch input:checked + .dot::after{left:16px}
+
+  /* quadres */
+  .panels{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:stretch}
+  .panel{background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--line);
+    border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:10px;min-height:300px;min-width:0}
+  .panel.a{--c:var(--a)}
+  .panel.b{--c:var(--b)}
+
+  .ph{display:flex;align-items:center;gap:10px}
+  .langbtn{display:flex;align-items:center;gap:10px;background:var(--card2);border:2px solid var(--c);
+    border-radius:14px;padding:6px 12px 6px 6px;color:var(--txt);font:inherit;cursor:pointer}
+  .langbtn b{font-size:18px}
+  .langbtn .chev{color:var(--c);font-size:14px;transition:transform .2s}
+  .panel.open .langbtn .chev{transform:rotate(180deg)}
+  .ph em{font-style:normal;color:var(--mut);font-size:13px;margin-left:auto;text-align:right}
+  .flag{width:44px;height:30px;border-radius:5px;box-shadow:0 0 0 1px rgba(255,255,255,.2);flex:none;display:block}
+
+  /* cinta lliscant de banderes */
+  .strip{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x proximity;padding:4px 2px 10px;
+    max-height:0;opacity:0;margin:-10px 0 -10px;transition:max-height .25s,opacity .2s,margin .25s;
+    -webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .panel.open .strip{max-height:110px;opacity:1;margin:0}
+  .chip{flex:none;scroll-snap-align:start;display:flex;flex-direction:column;align-items:center;gap:5px;
+    width:70px;padding:8px 4px;border-radius:12px;background:var(--card);border:2px solid transparent;
+    color:var(--txt);font:inherit;font-size:12px;cursor:pointer}
+  .chip.sel{border-color:var(--c);background:var(--card2)}
+  .chip:disabled{opacity:.25;cursor:not-allowed;filter:grayscale(1)}
+
+  textarea{
+    flex:1;width:100%;min-height:130px;resize:none;border:1px solid var(--line);border-radius:14px;
+    background:#0c1529;color:var(--txt);padding:12px 14px;font-size:20px;line-height:1.4;font-family:inherit;outline:none
+  }
+  textarea:focus{border-color:var(--c)}
+  textarea.interim{color:var(--mut);font-style:italic}
+  textarea.busy{opacity:.55}
+  .bar{display:flex;gap:10px;align-items:center}
+  .btn{border:0;border-radius:50%;width:64px;height:64px;display:grid;place-items:center;cursor:pointer;
+    color:#08111f;background:var(--c);transition:transform .12s;flex:none}
+  .btn:active{transform:scale(.93)}
+  .btn svg{width:28px;height:28px;fill:currentColor}
+  .btn.mic.rec{background:var(--err);color:#fff;animation:pulse 1.2s infinite}
+  .btn.spk{background:transparent;color:var(--c);border:2px solid var(--c);width:54px;height:54px}
+  .btn.spk.talk{background:var(--c);color:#08111f;animation:pulse2 1.2s infinite}
+  .btn.small{width:44px;height:44px;background:var(--card2);color:var(--txt);border:1px solid var(--line)}
+  .btn.small svg{width:20px;height:20px}
+  .spacer{flex:1}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(248,113,113,.6)}100%{box-shadow:0 0 0 22px rgba(248,113,113,0)}}
+  @keyframes pulse2{0%{box-shadow:0 0 0 0 rgba(255,255,255,.35)}100%{box-shadow:0 0 0 18px rgba(255,255,255,0)}}
+
+  /* botó intercanviar */
+  .swap{align-self:center;width:48px;height:48px;border-radius:50%;border:1px solid var(--line);background:var(--card2);
+    color:var(--txt);font-size:22px;cursor:pointer;display:grid;place-items:center;transition:transform .3s}
+  .swap:active{transform:rotate(180deg)}
+
+  #status{margin:14px 2px 0;min-height:22px;font-size:14px;color:var(--mut);text-align:center}
+  #status.err{color:var(--err)}
+  #status.ok{color:var(--ok)}
+
+  .hist{margin-top:18px}
+  .hist h2{font-size:15px;color:var(--mut);margin:0 0 8px;display:flex;align-items:center;justify-content:space-between}
+  .hist h2 button{background:none;border:0;color:var(--mut);cursor:pointer;font-size:13px;text-decoration:underline;font-family:inherit}
+  .item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);
+    border-radius:14px;padding:10px 14px;margin-bottom:8px;display:grid;gap:4px;cursor:pointer}
+  .item.a{--c:var(--a)} .item.b{--c:var(--b)}
+  .item .x{font-size:15px}
+  .item .y{font-size:17px;font-weight:600}
+  .item .m{font-size:12px;color:var(--mut)}
+
+  @media (max-width:760px){
+    .panels{grid-template-columns:1fr}
+    .panel{min-height:0}
+    .swap{transform:rotate(90deg);margin:-4px auto}
+    .swap:active{transform:rotate(270deg)}
+    textarea{min-height:96px;font-size:19px}
+    .ph em{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🗣️ Traductor de veu</h1>
+    <div class="opts">
+      <label class="switch" title="Llegeix en veu alta cada traducció">
+        <input type="checkbox" id="auto" checked><span class="dot"></span><span>Llegir automàticament</span>
+      </label>
+    </div>
+  </header>
+
+  <div class="panels">
+    <section class="panel a" id="panel-a"></section>
+    <button class="swap" id="swap" aria-label="Intercanviar idiomes" title="Intercanviar idiomes">⇄</button>
+    <section class="panel b" id="panel-b"></section>
+  </div>
+
+  <div id="status"></div>
+
+  <section class="hist">
+    <h2><span>Historial de la conversa</span><button id="clearHist">Esborrar historial</button></h2>
+    <div id="hist"></div>
+  </section>
+</div>
+
+<template id="panelTpl">
+  <div class="ph">
+    <button class="langbtn" aria-label="Triar idioma"><img class="flag" alt=""><b></b><span class="chev">▼</span></button>
+    <em></em>
+  </div>
+  <div class="strip" role="listbox"></div>
+  <textarea spellcheck="false"></textarea>
+  <div class="bar">
+    <button class="btn mic" aria-label="Dictar"><svg viewBox="0 0 24 24"><path d="M12 15a4 4 0 0 0 4-4V6a4 4 0 0 0-8 0v5a4 4 0 0 0 4 4zm6-4a1 1 0 1 1 2 0 8 8 0 0 1-7 7.94V21h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.06A8 8 0 0 1 4 11a1 1 0 1 1 2 0 6 6 0 0 0 12 0z"/></svg></button>
+    <button class="btn spk" aria-label="Escoltar"><svg viewBox="0 0 24 24"><path d="M3 10v4a1 1 0 0 0 1 1h3l4.3 3.6A1 1 0 0 0 13 18V6a1 1 0 0 0-1.7-.6L7 9H4a1 1 0 0 0-1 1zm13.5 2a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg></button>
+    <span class="spacer"></span>
+    <button class="btn small copy" aria-label="Copiar"><svg viewBox="0 0 24 24"><path d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10V1zm3 4H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H10V7h9v14z"/></svg></button>
+    <button class="btn small clear" aria-label="Esborrar"><svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+  </div>
+</template>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ---------- Idiomes ---------- */
+  const LANGS = [
+    {id:'ca', name:'Català',     sr:'ca-ES', tl:'ca',    mm:'ca',    flag:'es-ct', hint:'Parla en català'},
+    {id:'en', name:'Anglès',     sr:'en-GB', tl:'en',    mm:'en',    flag:'gb', hint:'Speak English'},
+    {id:'fr', name:'Francès',    sr:'fr-FR', tl:'fr',    mm:'fr',    flag:'fr', hint:'Parlez en français'},
+    {id:'pt', name:'Portuguès',  sr:'pt-PT', tl:'pt',    mm:'pt-PT', flag:'pt', hint:'Fale em português'},
+    {id:'br', name:'Brasiler',   sr:'pt-BR', tl:'pt',    mm:'pt-BR', flag:'br', hint:'Fale em português do Brasil'},
+    {id:'it', name:'Italià',     sr:'it-IT', tl:'it',    mm:'it',    flag:'it', hint:'Parla in italiano'},
+    {id:'de', name:'Alemany',    sr:'de-DE', tl:'de',    mm:'de',    flag:'de', hint:'Sprechen Sie Deutsch'},
+    {id:'nl', name:'Neerlandès', sr:'nl-NL', tl:'nl',    mm:'nl',    flag:'nl', hint:'Spreek Nederlands'},
+    {id:'zh', name:'Xinès',      sr:'zh-CN', tl:'zh-CN', mm:'zh-CN', flag:'cn', hint:'请说中文'},
+    {id:'ru', name:'Rus',        sr:'ru-RU', tl:'ru',    mm:'ru',    flag:'ru', hint:'Говорите по-русски'},
+    {id:'es', name:'Castellà',   sr:'es-ES', tl:'es',    mm:'es',    flag:'es', hint:'Habla en castellano'}
+  ];
+  const byId = id => LANGS.find(l => l.id === id);
+
+  /* ---------- Banderes incrustades (SVG) ---------- */
+  const star = (cx, cy, R, r, rot = -90) => {
+    const p = [];
+    for (let i = 0; i < 10; i++) {
+      const a = (rot + i * 36) * Math.PI / 180, d = i % 2 ? r : R;
+      p.push((cx + d * Math.cos(a)).toFixed(2) + ',' + (cy + d * Math.sin(a)).toFixed(2));
+    }
+    return p.join(' ');
+  };
+  const H3 = (a, b, c) => `<rect width="30" height="7" fill="${a}"/><rect y="6.67" width="30" height="6.67" fill="${b}"/><rect y="13.33" width="30" height="6.67" fill="${c}"/>`;
+  const V3 = (a, b, c) => `<rect width="10" height="20" fill="${a}"/><rect x="10" width="10" height="20" fill="${b}"/><rect x="20" width="10" height="20" fill="${c}"/>`;
+  const FLAGS = {
+    'es-ct': '<rect width="30" height="20" fill="#FCDD09"/>' + [1,3,5,7].map(i => `<rect y="${(i*20/9).toFixed(2)}" width="30" height="${(20/9).toFixed(2)}" fill="#DA121A"/>`).join(''),
+    'es': '<rect width="30" height="20" fill="#AA151B"/><rect y="5" width="30" height="10" fill="#F1BF00"/>',
+    'fr': V3('#0055A4', '#FFFFFF', '#EF4135'),
+    'pt': '<rect width="30" height="20" fill="#FF0000"/><rect width="12" height="20" fill="#006600"/><circle cx="12" cy="10" r="3.6" fill="#FFE000"/><circle cx="12" cy="10" r="2" fill="#FF0000"/><circle cx="12" cy="10" r="1" fill="#fff"/>',
+    'br': '<rect width="30" height="20" fill="#009C3B"/><polygon points="15,2 27.5,10 15,18 2.5,10" fill="#FFDF00"/><circle cx="15" cy="10" r="4.6" fill="#002776"/><path d="M10.6 9.2Q15 7.6 19.4 11" stroke="#fff" stroke-width="1.1" fill="none"/>',
+    'it': V3('#009246', '#FFFFFF', '#CE2B37'),
+    'de': H3('#000000', '#DD0000', '#FFCE00'),
+    'nl': H3('#AE1C28', '#FFFFFF', '#21468B'),
+    'cn': `<rect width="30" height="20" fill="#DE2910"/><polygon points="${star(5,5,3,1.2)}" fill="#FFDE00"/><polygon points="${star(10,2,1,.4,-70)}" fill="#FFDE00"/><polygon points="${star(12,4,1,.4,-90)}" fill="#FFDE00"/><polygon points="${star(12,7,1,.4,-90)}" fill="#FFDE00"/><polygon points="${star(10,9,1,.4,-70)}" fill="#FFDE00"/>`,
+    'ru': H3('#FFFFFF', '#0039A6', '#D52B1E'),
+    'gb': '<rect width="30" height="20" fill="#012169"/><path d="M0 0L30 20M30 0L0 20" stroke="#fff" stroke-width="4"/><path d="M0 0L30 20M30 0L0 20" stroke="#C8102E" stroke-width="1.5"/><path d="M15 0V20M0 10H30" stroke="#fff" stroke-width="6"/><path d="M15 0V20M0 10H30" stroke="#C8102E" stroke-width="3.4"/>'
+  };
+  const flagUrl = c => 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20" preserveAspectRatio="none">${FLAGS[c] || ''}</svg>`);
+
+  /* ---------- Estat ---------- */
+  const $ = id => document.getElementById(id);
+  const statusEl = $('status');
+  const setStatus = (msg, cls = '') => { statusEl.textContent = msg; statusEl.className = cls; };
+
+  const lang = { a: byId('ca'), b: byId('en') };
+  try {
+    const sa = byId(localStorage.getItem('tv_a')), sb = byId(localStorage.getItem('tv_b'));
+    if (sa && sb && sa.id !== sb.id) { lang.a = sa; lang.b = sb; }
+  } catch (e) {}
+  const other = s => s === 'a' ? 'b' : 'a';
+  const P = {};          // elements de cada quadre
+  let seq = 0, rec = null, recSide = null, history = [];
+
+  /* ---------- Construcció dels quadres ---------- */
+  ['a', 'b'].forEach(s => {
+    const panel = $('panel-' + s);
+    panel.appendChild($('panelTpl').content.cloneNode(true));
+    const p = P[s] = {
+      panel,
+      langbtn: panel.querySelector('.langbtn'),
+      flag: panel.querySelector('.langbtn .flag'),
+      name: panel.querySelector('.langbtn b'),
+      hint: panel.querySelector('.ph em'),
+      strip: panel.querySelector('.strip'),
+      box: panel.querySelector('textarea'),
+      mic: panel.querySelector('.mic'),
+      spk: panel.querySelector('.spk'),
+      chips: {}
+    };
+    p.box.placeholder = s === 'a' ? 'Prem el micròfon i parla… o escriu aquí' : 'La traducció apareixerà aquí… o parla en aquest idioma';
+    LANGS.forEach(l => {
+      const c = document.createElement('button');
+      c.className = 'chip'; c.setAttribute('role', 'option');
+      c.innerHTML = `<img class="flag" src="${flagUrl(l.flag)}" alt=""><span>${l.name}</span>`;
+      c.addEventListener('click', () => { setLang(s, l.id); togglePicker(s, false); });
+      p.strip.appendChild(c); p.chips[l.id] = c;
+    });
+    p.langbtn.addEventListener('click', () => togglePicker(s));
+    p.mic.addEventListener('click', () => startRec(s));
+    p.spk.addEventListener('click', () => {
+      unlockTTS();
+      if (talkingBtn === p.spk) return stopSpeak();
+      stopRec(); speakText(p.box.value, lang[s], p.spk);
+    });
+    p.box.addEventListener('input', () => { clearTimeout(typeTimer); typeTimer = setTimeout(() => translateFrom(s, false), 800); });
+    panel.querySelector('.copy').addEventListener('click', async () => {
+      const t = p.box.value; if (!t) return;
+      try { await navigator.clipboard.writeText(t); } catch (e) { p.box.select(); document.execCommand('copy'); }
+      setStatus('Copiat ✓', 'ok');
+    });
+    panel.querySelector('.clear').addEventListener('click', () => {
+      stopAll(); seq++; P.a.box.value = ''; P.b.box.value = ''; setStatus('');
+    });
+  });
+  let typeTimer;
+
+  function togglePicker(s, force) {
+    const open = force !== undefined ? force : !P[s].panel.classList.contains('open');
+    P[other(s)].panel.classList.remove('open');
+    P[s].panel.classList.toggle('open', open);
+    if (open) {
+      const sel = P[s].chips[lang[s].id];
+      sel.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }
+
+  function renderPanels() {
+    ['a', 'b'].forEach(s => {
+      const p = P[s], L = lang[s], o = lang[other(s)];
+      p.flag.src = flagUrl(L.flag); p.flag.alt = L.name;
+      p.name.textContent = L.name;
+      p.hint.textContent = L.hint;
+      p.box.lang = L.sr;
+      p.mic.setAttribute('aria-label', 'Dictar en ' + L.name.toLowerCase());
+      LANGS.forEach(l => {
+        const c = p.chips[l.id];
+        c.classList.toggle('sel', l.id === L.id);
+        c.disabled = l.id === o.id;      // la llengua de l'altre quadre queda inhabilitada
+        c.setAttribute('aria-selected', l.id === L.id);
+      });
+    });
+    try { localStorage.setItem('tv_a', lang.a.id); localStorage.setItem('tv_b', lang.b.id); } catch (e) {}
+  }
+
+  function setLang(s, id) {
+    const L = byId(id);
+    if (!L || L.id === lang[other(s)].id) return;
+    stopAll();
+    lang[s] = L;
+    renderPanels();
+    // Si l'altre quadre té text, el retradueix a la nova llengua
+    const o = other(s);
+    if (P[o].box.value.trim()) translateFrom(o, false);
+    else P[s].box.value = '';
+    setStatus('');
+  }
+
+  $('swap').addEventListener('click', () => {
+    stopAll();
+    [lang.a, lang.b] = [lang.b, lang.a];
+    [P.a.box.value, P.b.box.value] = [P.b.box.value, P.a.box.value];
+    togglePicker('a', false); togglePicker('b', false);
+    renderPanels();
+  });
+
+  /* ---------- Traducció ---------- */
+  async function getJSON(url, ms = 6000) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
+
+  async function translate(text, from, to) {
+    const q = encodeURIComponent(text);
+    const services = [
+      async () => {
+        const d = await getJSON(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from.tl}&tl=${to.tl}&dt=t&q=${q}`);
+        return (d && d[0] || []).map(x => x && x[0] || '').join('');
+      },
+      async () => {
+        const d = await getJSON(`https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${from.tl}&tl=${to.tl}&q=${q}`);
+        const v = Array.isArray(d) ? d[0] : d;
+        return Array.isArray(v) ? v[0] : (typeof v === 'string' ? v : '');
+      },
+      async () => {
+        const d = await getJSON(`https://api.mymemory.translated.net/get?q=${q}&langpair=${from.mm}|${to.mm}`);
+        const out = d && d.responseData && d.responseData.translatedText || '';
+        return /MYMEMORY WARNING|QUERY LENGTH LIMIT/i.test(out) ? '' : out;
+      }
+    ];
+    for (const s of services) {
+      try { const out = (await s() || '').trim(); if (out) return out; } catch (e) {}
+    }
+    throw new Error('Cap servei ha respost');
+  }
+
+  async function translateFrom(s, speak = true) {
+    const o = other(s), fromL = lang[s], toL = lang[o];
+    const src = P[s].box, dst = P[o].box;
+    const text = src.value.trim();
+    if (!text) { dst.value = ''; return; }
+    if (fromL.tl === toL.tl) { dst.value = text; return; }   // portuguès ⇄ brasiler
+    const my = ++seq;
+    dst.classList.add('busy');
+    setStatus('Traduint…');
+    try {
+      const out = await translate(text, fromL, toL);
+      if (my !== seq) return;
+      dst.value = out;
+      setStatus('Fet ✓', 'ok');
+      addHistory(s, text, out, fromL, toL);
+      if (speak && $('auto').checked) speakText(out, toL, P[o].spk);
+    } catch (e) {
+      if (my !== seq) return;
+      setStatus('No s\'ha pogut traduir. Comprova la connexió.', 'err');
+    } finally {
+      if (my === seq) dst.classList.remove('busy');
+    }
+  }
+
+  /* ---------- Reconeixement de veu ---------- */
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let silenceTimer = null;
+
+  function stopRec() {
+    clearTimeout(silenceTimer);
+    if (rec) { try { rec.onend = null; rec.onresult = null; rec.abort(); } catch (e) {} rec = null; }
+    ['a', 'b'].forEach(s => { P[s].mic.classList.remove('rec'); P[s].box.classList.remove('interim'); });
+    recSide = null;
+  }
+
+  function startRec(s) {
+    if (!SR) { setStatus('Aquest navegador no admet dictat per veu. Fes servir Safari (iPhone) o Chrome/Edge (ordinador).', 'err'); return; }
+    unlockTTS(); stopSpeak();
+    togglePicker(s, false);
+    if (recSide === s && rec) { try { rec.stop(); } catch (e) {} return; }   // segon toc = acabar i traduir
+    stopRec();
+
+    const L = lang[s], box = P[s].box, mic = P[s].mic, otherBox = P[other(s)].box;
+    let heard = '', done = false;
+
+    const r = new SR();
+    r.lang = L.sr; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+
+    const armSilence = () => {
+      clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => { try { r.stop(); } catch (e) {} }, 1600);
+    };
+    const finish = () => {
+      if (done) return; done = true;
+      clearTimeout(silenceTimer);
+      mic.classList.remove('rec'); box.classList.remove('interim');
+      if (rec === r) { rec = null; recSide = null; }
+      const text = heard.trim();
+      if (text) { box.value = text; translateFrom(s, true); }
+      else if (!statusEl.classList.contains('err')) setStatus('');
+    };
+
+    r.onstart = () => {
+      box.value = ''; otherBox.value = '';
+      mic.classList.add('rec');
+      setStatus('Escoltant en ' + L.name.toLowerCase() + '… (toca de nou per acabar)');
+      clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => { try { r.stop(); } catch (e) {} }, 8000);
+    };
+    r.onresult = ev => {
+      let all = '', interim = false;
+      for (let i = 0; i < ev.results.length; i++) {
+        all += ev.results[i][0].transcript;
+        if (!ev.results[i].isFinal) interim = true;
+      }
+      heard = all.replace(/\s+/g, ' ').trim();
+      box.value = heard;
+      box.classList.toggle('interim', interim);
+      armSilence();
+    };
+    r.onspeechend = () => armSilence();
+    r.onerror = ev => {
+      const m = {
+        'not-allowed': 'Permís de micròfon denegat. Activa\'l a la configuració del navegador.',
+        'service-not-allowed': 'El servei de veu no està permès en aquest navegador.',
+        'no-speech': 'No he sentit res. Torna-ho a provar.',
+        'audio-capture': 'No es detecta cap micròfon.',
+        'network': 'Error de xarxa en el reconeixement de veu.',
+        'language-not-supported': 'Idioma no admès per al dictat en aquest dispositiu.'
+      };
+      if (ev.error === 'aborted') return;
+      if (ev.error === 'no-speech' && heard) return;
+      setStatus(m[ev.error] || ('Error de veu: ' + ev.error), 'err');
+    };
+    r.onend = finish;
+
+    rec = r; recSide = s;
+    try { r.start(); } catch (e) { setStatus('No s\'ha pogut iniciar el micròfon.', 'err'); stopRec(); }
+  }
+
+  /* ---------- Síntesi de veu ---------- */
+  const synth = window.speechSynthesis;
+  let voices = [];
+  const loadVoices = () => { if (synth) voices = synth.getVoices(); };
+  if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+
+  function pickVoice(code) {
+    const c = code.toLowerCase(), base = c.split('-')[0];
+    return voices.find(v => v.lang.toLowerCase().replace('_', '-') === c)
+        || voices.find(v => v.lang.toLowerCase().startsWith(base));
+  }
+
+  let unlocked = false;
+  function unlockTTS() {
+    if (!synth || unlocked) return;
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); unlocked = true; } catch (e) {}
+  }
+
+  let talkingBtn = null;
+  function stopSpeak() {
+    if (synth) synth.cancel();
+    P.a.spk.classList.remove('talk'); P.b.spk.classList.remove('talk'); talkingBtn = null;
+  }
+  function stopAll() { stopRec(); stopSpeak(); }
+
+  function speakText(text, L, btn) {
+    if (!synth) { setStatus('Aquest navegador no admet síntesi de veu.', 'err'); return; }
+    text = (text || '').trim(); if (!text) return;
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = L.sr; u.rate = 0.95;
+    const v = pickVoice(L.sr); if (v) u.voice = v;
+    P.a.spk.classList.remove('talk'); P.b.spk.classList.remove('talk');
+    if (btn) { btn.classList.add('talk'); talkingBtn = btn; }
+    u.onend = u.onerror = () => { if (btn) btn.classList.remove('talk'); if (talkingBtn === btn) talkingBtn = null; };
+    if (!v) setStatus('Pot ser que el teu dispositiu no tingui veu per a ' + L.name.toLowerCase() + '.');
+    synth.speak(u);
+  }
+
+  /* ---------- Historial ---------- */
+  function addHistory(s, x, y, fromL, toL) {
+    history.unshift({ s, x, y, fromL, toL });
+    history = history.slice(0, 30);
+    renderHistory();
+  }
+  function renderHistory() {
+    const h = $('hist'); h.innerHTML = '';
+    history.forEach(it => {
+      const d = document.createElement('div');
+      d.className = 'item ' + it.s;
+      const x = document.createElement('div'); x.className = 'x'; x.textContent = it.x;
+      const y = document.createElement('div'); y.className = 'y'; y.textContent = it.y;
+      const m = document.createElement('div'); m.className = 'm'; m.textContent = `${it.fromL.name} → ${it.toL.name} · toca per escoltar`;
+      d.append(x, y, m);
+      d.addEventListener('click', () => { unlockTTS(); speakText(it.y, it.toL, null); });
+      h.appendChild(d);
+    });
+  }
+  $('clearHist').addEventListener('click', () => { history = []; renderHistory(); });
+
+  // Tancar la cinta tocant fora
+  document.addEventListener('click', e => {
+    ['a', 'b'].forEach(s => { if (!P[s].panel.contains(e.target)) P[s].panel.classList.remove('open'); });
+  });
+
+  /* ---------- Inici ---------- */
+  renderPanels();
+  if (!SR) setStatus('Dictat per veu no disponible en aquest navegador (prova Safari o Chrome). Pots escriure igualment.', 'err');
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopAll(); });
+})();
+</script>
+</body>
+</html>
